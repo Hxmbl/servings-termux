@@ -21,7 +21,7 @@ def _make_pxe_request():
 
 def test_parse_packet_detects_pxe():
     data = _make_pxe_request()
-    addr = ("192.0.2.1", 4011)
+    addr = ("127.0.0.1", 4011)
     info = parse_packet(data, addr)
     assert info is not None
     assert info["client_address"] == addr
