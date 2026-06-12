@@ -1,16 +1,14 @@
 """Thread orchestration — launches all PXE boot servers concurrently.
 
-Root mode: full DHCP server on port 67, replaces Android's dnsmasq.
+Root mode: full DHCP server on port 67, replaces Android's dnsmasq (default).
 Non-root mode: ProxyDHCP on port 4011, limited (Android's DHCP doesn't advertise PXE).
 
-Root mode setup (requires su):
+Root mode setup:
   su -c killall dnsmasq
-  python src/main.py --root
+  servings serve
 
-Non-root mode limitation:
-  Android's built-in DHCP server on USB tethering responds to DHCPDISCOVER before
-  your ProxyDHCP can, and doesn't include PXE options. The PC gets an IP but
-  never learns about port 4011. Use root mode or configure the PC's BIOS manually.
+Non-root (limited):
+  servings serve --no-root
 """
 
 import threading
@@ -24,22 +22,22 @@ from src.boot_config import generate_boot_config
 
 
 def serve(
-    port: int = 4011,
-    tftp_port: int = 6969,
+    port: int = 67,
+    tftp_port: int = 69,
     http_port: int = 8080,
     boot_dir: str = ".",
-    root_mode: bool = False,
+    root_mode: bool = True,
     server_ip: str = "192.168.42.129",
     boot_file: str = "undionly.kpxe",
 ) -> None:
     """Start all PXE boot servers concurrently.
 
-    Root mode: uses port 67 for full DHCP (needs su to bind).
+    Root mode (default): uses port 67 for full DHCP (needs su to bind).
     Non-root mode: uses port 4011 for ProxyDHCP (limited without root).
 
     Port notes:
-        - DHCP/ProxyDHCP: 67 (root) or 4011 (non-root)
-        - TFTP: 6969 default because 69 needs root; use 69 on rooted devices
+        - DHCP: 67 (root) or 4011 (non-root)
+        - TFTP: 69 (root) or 6969 (non-root)
         - HTTP: 8080 is standard for alt HTTP; iPXE hits this for heavy payloads
     """
     root = Path(boot_dir).resolve()
@@ -68,7 +66,6 @@ def serve(
         print("  MODE      : non-root — ProxyDHCP only (limited)")
         print("  WARNING   : Android's DHCP doesn't advertise PXE options.")
         print("              The PC may not discover this server.")
-        print("              Use --root for full USB tethering PXE support.")
     print(f"  DHCP      : UDP {dhcp_port}")
     print(f"  TFTP      : UDP {tftp_actual}")
     print(f"  HTTP      : TCP {http_port}")

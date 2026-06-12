@@ -1,11 +1,9 @@
 """Servings CLI — PXE/Boot server.
 
-Run as root for full USB tethering PXE support:
+Runs as root by default for full USB tethering PXE support.
+Kill Android's dnsmasq first, then run the server:
   su -c killall dnsmasq
-  python src/main.py serve --root
-
-Without root, the server runs in limited ProxyDHCP mode. Android's built-in
-DHCP doesn't advertise PXE options, so the PC won't discover the boot server.
+  servings serve
 """
 
 import sys
@@ -53,28 +51,27 @@ def _resolve_boot_dir(explicit: str | None) -> str:
 
 @app.command()
 def serve(
-    port: int = typer.Option(4011, help="ProxyDHCP UDP port (non-root mode)"),
-    tftp_port: int = typer.Option(6969, help="TFTP UDP port (use 69 on rooted devices)"),
+    port: int = typer.Option(67, help="DHCP server UDP port"),
+    tftp_port: int = typer.Option(69, help="TFTP UDP port"),
     http_port: int = typer.Option(8080, help="HTTP TCP port for iPXE payloads"),
     boot_dir: str = typer.Option(None, help="Directory containing boot files (default: auto-detect)"),
-    root: bool = typer.Option(False, "--root", "-r", help="Root mode: full DHCP server on port 67"),
-    server_ip: str = typer.Option("192.168.42.129", help="Phone's IP on USB network (root mode)"),
-    boot_file: str = typer.Option("undionly.kpxe", help="Boot file to serve (root mode)"),
+    root: bool = typer.Option(True, "--root/--no-root", "-r", help="Root mode: full DHCP + PXE (default: on)"),
+    server_ip: str = typer.Option("192.168.42.129", help="Phone's IP on USB network"),
+    boot_file: str = typer.Option("undionly.kpxe", help="Boot file to serve"),
 ) -> None:
     """Start PXE boot servers.
 
-    Root mode (requires su):
-      Kill Android's dnsmasq first, then run with --root.
-      The server binds port 67 and handles full DHCP + PXE.
+    Requires root for full USB tethering PXE support.
+    Kill Android's dnsmasq first, then run:
+      su -c killall dnsmasq
+      servings serve
 
-    Non-root mode:
-      ProxyDHCP on port 4011. Limited — Android's DHCP doesn't
-      advertise PXE options, so the PC may not discover this server.
+    Use --no-root for limited ProxyDHCP mode (port 4011, port 6969).
 
     Examples:
-      servings serve --root
-      servings serve --root --server-ip 192.168.42.129
-      servings serve  # non-root, limited
+      servings serve
+      servings serve --server-ip 192.168.42.129
+      servings serve --no-root  # limited mode
     """
     resolved = _resolve_boot_dir(boot_dir)
     _serve(
