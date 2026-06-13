@@ -55,7 +55,7 @@ def serve(
     tftp_port: int = typer.Option(69, help="TFTP UDP port"),
     http_port: int = typer.Option(8080, help="HTTP TCP port for iPXE payloads"),
     boot_dir: str = typer.Option(None, help="Directory containing boot files (default: auto-detect)"),
-    root: bool = typer.Option(True, "--root/--no-root", "-r", help="Root mode: full DHCP + PXE (default: on)"),
+    root: bool = typer.Option(True, "--root/--no-root", help="Root mode: full DHCP + PXE (default: on)"),
     server_ip: str = typer.Option("192.168.42.129", help="Phone's IP on USB network"),
     boot_file: str = typer.Option("undionly.kpxe", help="Boot file to serve"),
 ) -> None:
