@@ -1,20 +1,12 @@
-"""HTTP server — streams boot payloads (kernel, initrd, ISOs) to iPXE clients.
+"""HTTP server — streams boot payloads (kernel, initrd, ISOs) to iPXE clients."""
 
-This is the third stage of PXE boot:
-1. iPXE loads from TFTP (port 6969)
-2. iPXE fetches boot.cfg from this HTTP server (port 8080)
-3. boot.cfg tells iPXE which kernel/initrd/ISO to load
-4. iPXE loads the OS image via HTTP
-
-HTTP is used for heavy payloads — TFTP is too slow for kernels/ISOs.
-"""
-
-import threading
+import threading, traceback
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 
 
-# File extensions → MIME types — iPXE needs correct Content-Type to load files
+CHUNK_SIZE = 256 * 1024
+
 MIME_TYPES = {
     ".kernel": "application/octet-stream",
     ".bzImage": "application/octet-stream",
@@ -35,6 +27,7 @@ class BootHTTPHandler(BaseHTTPRequestHandler):
     """Serves boot assets from the configured boot directory."""
 
     boot_root: Path = Path(".")
+    extra_paths: list[Path] = []
 
     def do_GET(self) -> None:
         path = self.path.lstrip("/")
@@ -43,7 +36,15 @@ class BootHTTPHandler(BaseHTTPRequestHandler):
             return
 
         full_path = (self.boot_root / path).resolve()
-        if not str(full_path).startswith(str(self.boot_root.resolve())):
+        boot_root_resolved = self.boot_root.resolve()
+        allowed = str(full_path).startswith(str(boot_root_resolved))
+        if not allowed:
+            for extra in self.extra_paths:
+                extra_resolved = extra.resolve()
+                if str(full_path).startswith(str(extra_resolved)):
+                    allowed = True
+                    break
+        if not allowed:
             self.send_error(403)
             return
 
@@ -52,18 +53,23 @@ class BootHTTPHandler(BaseHTTPRequestHandler):
             return
 
         try:
-            data = full_path.read_bytes()
+            file_size = full_path.stat().st_size
             ext = full_path.suffix.lower()
             content_type = MIME_TYPES.get(ext, "application/octet-stream")
             self.send_response(200)
             self.send_header("Content-Type", content_type)
-            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Content-Length", str(file_size))
             self.send_header("Connection", "close")
             self.end_headers()
-            self.wfile.write(data)
-        except OSError as e:
+            with open(full_path, "rb") as f:
+                while True:
+                    chunk = f.read(CHUNK_SIZE)
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+        except Exception as e:
             print(f"[!] HTTP: error serving {path}: {e}")
-            self.send_error(500)
+            traceback.print_exc()
 
     def log_message(self, format: str, *args: object) -> None:
         print(f"[+] HTTP {args[0]}")
@@ -71,9 +77,12 @@ class BootHTTPHandler(BaseHTTPRequestHandler):
 
 def _http_server(port: int, boot_root: Path, shutdown: threading.Event) -> None:
     """Start the HTTP file server."""
-    BootHTTPHandler.boot_root = boot_root
-    server = HTTPServer(("0.0.0.0", port), BootHTTPHandler)
-    server.timeout = 1.0
-    print(f"[*] HTTP listening on TCP {port} (root: {boot_root})")
-    while not shutdown.is_set():
-        server.handle_request()
+    try:
+        BootHTTPHandler.boot_root = boot_root
+        server = HTTPServer(("0.0.0.0", port), BootHTTPHandler)
+        print(f"[*] HTTP listening on TCP {port} (root: {boot_root})")
+        server.timeout = 1.0
+        while not shutdown.is_set():
+            server.handle_request()
+    except Exception:
+        traceback.print_exc()
