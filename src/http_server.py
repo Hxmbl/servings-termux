@@ -1,11 +1,29 @@
 """HTTP server — streams boot payloads (kernel, initrd, ISOs) to iPXE clients."""
 
-import threading, traceback
+import socket, threading, traceback
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
 
 
 CHUNK_SIZE = 256 * 1024
+
+
+class ReusableHTTPServer(HTTPServer):
+    """HTTPServer with SO_REUSEADDR + SO_REUSEPORT set before bind.
+    
+    Prevents 'Address already in use' errors after crashes.
+    """
+    allow_reuse_address = True
+    allow_reuse_port = True
+
+    def server_bind(self) -> None:
+        self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        if hasattr(socket, "SO_REUSEPORT"):
+            try:
+                self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+            except OSError:
+                pass
+        super().server_bind()
 
 MIME_TYPES = {
     ".kernel": "application/octet-stream",
@@ -79,7 +97,7 @@ def _http_server(port: int, boot_root: Path, shutdown: threading.Event) -> None:
     """Start the HTTP file server."""
     try:
         BootHTTPHandler.boot_root = boot_root
-        server = HTTPServer(("0.0.0.0", port), BootHTTPHandler)
+        server = ReusableHTTPServer(("0.0.0.0", port), BootHTTPHandler)
         print(f"[*] HTTP listening on TCP {port} (root: {boot_root})")
         server.timeout = 1.0
         while not shutdown.is_set():

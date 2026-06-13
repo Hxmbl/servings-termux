@@ -181,6 +181,11 @@ def dhcp_listener(
 
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        if hasattr(socket, "SO_REUSEPORT"):
+            try:
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+            except OSError:
+                pass
         s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
         s.bind(("", port))
         s.settimeout(1.0)
@@ -197,23 +202,21 @@ def dhcp_listener(
                 continue
 
             mac_str = request["mac_str"]
-
-            # Only serve PXE clients — ignore regular DHCP requests
-            if not request["is_pxe"]:
-                print(f"[.] DHCP: ignoring non-PXE request from {mac_str}")
-                continue
+            is_pxe = request["is_pxe"]
 
             ip = pool.allocate(mac_str)
             dest = (f"{subnet}.255", 68)
 
+            tag = "PXE" if is_pxe else "DHCP"
+
             if request["msg_type"] == DHCP_DISCOVER:
-                print(f"[+] DHCP: DISCOVER from {mac_str} → offering {ip}")
+                print(f"[+] {tag}: DISCOVER from {mac_str} → offering {ip}")
                 resp = _build_bootp_packet(request, ip, server_ip, DHCP_OFFER, boot_file)
                 s.sendto(resp, dest)
-                print(f"[+] DHCP: OFFER sent to {dest}")
+                print(f"[+] {tag}: OFFER sent {ip} to {mac_str}")
 
             elif request["msg_type"] == DHCP_REQUEST:
-                print(f"[+] DHCP: REQUEST from {mac_str} → acknowledging {ip}")
+                print(f"[+] {tag}: REQUEST from {mac_str} → ACK {ip}")
                 resp = _build_bootp_packet(request, ip, server_ip, DHCP_ACK, boot_file)
                 s.sendto(resp, dest)
-                print(f"[+] DHCP: ACK sent to {dest}")
+                print(f"[+] {tag}: ACK {ip} to {mac_str}")
